@@ -58,6 +58,7 @@ public:
     Q_INVOKABLE QStringList availablePorts() const;
     Q_INVOKABLE void toggleConnection();
     Q_INVOKABLE void toggleRunning();
+    Q_INVOKABLE void persistSerialConfig();
 
 signals:
     void connectedChanged();
@@ -72,6 +73,8 @@ private:
 
     void appendLog(const QString &message);
     bool applySerialSettings();
+    void loadSerialConfig();
+    void saveSerialConfig() const;
     void sendQuery(PendingRequest reason);
     void onReadyRead();
     void onSerialError(const QString &message);
@@ -100,6 +103,7 @@ private:
     QVariantList m_sampleVoltages;
     QVariantList m_sampleCurrents;
     qint64 m_runStartMs = 0;
+    int m_zeroCurrentCount = 0;
 
     QString m_portName;
     int m_baudRate = 9600;

@@ -1,12 +1,21 @@
 #include "devicecontroller.h"
 
 #include <QDateTime>
+#include <QSettings>
 
 namespace {
 const QByteArray kQueryFrame = QByteArray::fromHex("010300000008440C");
 constexpr int kMinFrameSize = 21;
 constexpr int kResponseTimeoutMs = 1500;
 constexpr int kSampleIntervalMs = 5000;
+constexpr int kZeroCurrentStopCount = 5;
+const QLatin1String kSettingsGroup("serial");
+const QLatin1String kKeyPort("portName");
+const QLatin1String kKeyBaud("baudRate");
+const QLatin1String kKeyDataBits("dataBits");
+const QLatin1String kKeyParity("parity");
+const QLatin1String kKeyStopBits("stopBits");
+const QList<int> kValidBaudRates = {1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200};
 }
 
 DeviceController::DeviceController(QObject *parent)
@@ -21,11 +30,14 @@ DeviceController::DeviceController(QObject *parent)
     connect(&m_sampleTimer, &QTimer::timeout, this, &DeviceController::onSampleTimer);
     connect(&m_responseTimer, &QTimer::timeout, this, &DeviceController::onResponseTimeout);
 
-    const QStringList ports = availablePorts();
-    if (!ports.isEmpty())
-        m_portName = ports.first();
+    loadSerialConfig();
 
-    appendLog(QStringLiteral("请先配置端口号"));
+    if (m_portName.isEmpty()) {
+        const QStringList ports = availablePorts();
+        if (!ports.isEmpty())
+            m_portName = ports.first();
+        appendLog(QStringLiteral("请先配置端口号"));
+    }
 }
 
 DeviceController::~DeviceController()
@@ -40,6 +52,7 @@ void DeviceController::setPortName(const QString &portName)
         return;
     m_portName = portName;
     emit serialConfigChanged();
+    saveSerialConfig();
 }
 
 void DeviceController::setBaudRate(int baudRate)
@@ -48,6 +61,7 @@ void DeviceController::setBaudRate(int baudRate)
         return;
     m_baudRate = baudRate;
     emit serialConfigChanged();
+    saveSerialConfig();
 }
 
 void DeviceController::setDataBits(int dataBits)
@@ -56,6 +70,7 @@ void DeviceController::setDataBits(int dataBits)
         return;
     m_dataBits = dataBits;
     emit serialConfigChanged();
+    saveSerialConfig();
 }
 
 void DeviceController::setParity(int parity)
@@ -64,6 +79,7 @@ void DeviceController::setParity(int parity)
         return;
     m_parity = parity;
     emit serialConfigChanged();
+    saveSerialConfig();
 }
 
 void DeviceController::setStopBits(int stopBits)
@@ -72,6 +88,45 @@ void DeviceController::setStopBits(int stopBits)
         return;
     m_stopBits = stopBits;
     emit serialConfigChanged();
+    saveSerialConfig();
+}
+
+void DeviceController::loadSerialConfig()
+{
+    QSettings settings;
+    settings.beginGroup(kSettingsGroup);
+    m_portName = settings.value(kKeyPort).toString();
+    const int baudRate = settings.value(kKeyBaud, m_baudRate).toInt();
+    if (kValidBaudRates.contains(baudRate))
+        m_baudRate = baudRate;
+    const int dataBits = settings.value(kKeyDataBits, m_dataBits).toInt();
+    if (dataBits >= 5 && dataBits <= 8)
+        m_dataBits = dataBits;
+    const int parity = settings.value(kKeyParity, m_parity).toInt();
+    if (parity >= 0 && parity <= 4)
+        m_parity = parity;
+    const int stopBits = settings.value(kKeyStopBits, m_stopBits).toInt();
+    if (stopBits == 1 || stopBits == 2 || stopBits == 3)
+        m_stopBits = stopBits;
+    settings.endGroup();
+    emit serialConfigChanged();
+}
+
+void DeviceController::saveSerialConfig() const
+{
+    QSettings settings;
+    settings.beginGroup(kSettingsGroup);
+    settings.setValue(kKeyPort, m_portName);
+    settings.setValue(kKeyBaud, m_baudRate);
+    settings.setValue(kKeyDataBits, m_dataBits);
+    settings.setValue(kKeyParity, m_parity);
+    settings.setValue(kKeyStopBits, m_stopBits);
+    settings.endGroup();
+}
+
+void DeviceController::persistSerialConfig()
+{
+    saveSerialConfig();
 }
 
 QStringList DeviceController::availablePorts() const
@@ -130,6 +185,7 @@ void DeviceController::toggleRunning()
     m_sampleTimes.clear();
     m_sampleVoltages.clear();
     m_sampleCurrents.clear();
+    m_zeroCurrentCount = 0;
     m_runStartMs = QDateTime::currentMSecsSinceEpoch();
     m_running = true;
     emit runningChanged();
@@ -207,6 +263,17 @@ void DeviceController::onReadyRead()
         m_sampleVoltages.append(voltage);
         m_sampleCurrents.append(current);
         emit chartDataChanged();
+
+        if (current == 0.0) {
+            ++m_zeroCurrentCount;
+            if (m_zeroCurrentCount >= kZeroCurrentStopCount) {
+                stopRunningInternal();
+                appendLog(QStringLiteral("连续 %1 次读取的电流均为 0，已自动停止运行")
+                              .arg(kZeroCurrentStopCount));
+            }
+        } else {
+            m_zeroCurrentCount = 0;
+        }
     }
 
     finishPending(true, {});

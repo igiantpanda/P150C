@@ -56,6 +56,7 @@ Dialog {
         controller.dataBits = pendingDataBits
         controller.parity = pendingParity
         controller.stopBits = pendingStopBits
+        controller.persistSerialConfig()
     }
 
     GridLayout {

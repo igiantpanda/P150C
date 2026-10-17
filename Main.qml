@@ -9,7 +9,7 @@ ApplicationWindow {
     minimumWidth: 980
     minimumHeight: 620
     visible: true
-    title: qsTr("P150C电子负载仪上位机")
+    title: qsTr("P150C电子负载仪")
     color: "#f0f0f0"
 
     DeviceController {
@@ -28,8 +28,52 @@ ApplicationWindow {
         modal: true
         standardButtons: Dialog.Ok
         anchors.centerIn: parent
-        Label {
-            text: qsTr("P150C电子负载仪上位机\n版本 0.1")
+        width: 440
+
+        ColumnLayout {
+            spacing: 14
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 14
+
+                Image {
+                    source: "qrc:/images/icon.png"
+                    sourceSize: Qt.size(64, 64)
+                    Layout.preferredWidth: 64
+                    Layout.preferredHeight: 64
+                }
+
+                ColumnLayout {
+                    spacing: 6
+                    Label {
+                        text: qsTr("软件名称：P150C电子负载仪")
+                        font.pixelSize: 16
+                        font.bold: true
+                    }
+                    Label {
+                        text: qsTr("软件版本号：V1.0")
+                        font.pixelSize: 14
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 4
+                Label {
+                    text: qsTr("项目网址：")
+                    font.pixelSize: 14
+                }
+                Label {
+                    text: '<a href="https://github.com/igiantpanda/P150C">https://github.com/igiantpanda/P150C</a>'
+                    textFormat: Text.RichText
+                    font.pixelSize: 14
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                    onLinkActivated: function(link) { Qt.openUrlExternally(link) }
+                }
+            }
         }
     }
 

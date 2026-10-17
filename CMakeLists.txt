@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(P150C VERSION 0.1 LANGUAGES CXX)
+project(P150C VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,8 +13,22 @@ if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/importedcontent/CMakeLists.txt")
     add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/importedcontent)
 endif()
 
-qt_add_executable(appP150C
+set(APP_MAIN_SOURCES
     main.cpp
+)
+
+if (WIN32)
+    set(APP_ICON_ABSOLUTE "${CMAKE_CURRENT_SOURCE_DIR}/assets/app.ico")
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/app.rc.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/app.rc"
+        @ONLY
+    )
+    list(APPEND APP_MAIN_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/app.rc")
+endif()
+
+qt_add_executable(appP150C
+    ${APP_MAIN_SOURCES}
 )
 
 qt_add_qml_module(appP150C
@@ -29,6 +43,13 @@ qt_add_qml_module(appP150C
         devicecontroller.cpp
         nativeserialport.h
         nativeserialport.cpp
+)
+
+qt_add_resources(appP150C "app_images"
+    PREFIX "/images"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+    FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.png"
 )
 
 set_target_properties(appP150C PROPERTIES
