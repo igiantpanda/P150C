@@ -3,13 +3,17 @@
 #include <QDateTime>
 #include <QSettings>
 
+#ifdef Q_OS_WIN
+#  include <windows.h>
+#endif
+
 namespace {
 const QByteArray kQueryFrame = QByteArray::fromHex("010300000008440C");
 constexpr int kMinFrameSize = 21;
 constexpr int kResponseTimeoutMs = 1500;
 constexpr int kSampleIntervalMs = 5000;
 constexpr int kZeroCurrentStopCount = 5;
-constexpr double kLowCurrentThresholdA = 0.010; // 10mA
+constexpr double kLowCurrentThresholdA = 0.005; // 5mA
 const QLatin1String kSettingsGroup("serial");
 const QLatin1String kKeyPort("portName");
 const QLatin1String kKeyBaud("baudRate");
@@ -17,6 +21,21 @@ const QLatin1String kKeyDataBits("dataBits");
 const QLatin1String kKeyParity("parity");
 const QLatin1String kKeyStopBits("stopBits");
 const QList<int> kValidBaudRates = {1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200};
+
+// Prevent the system from sleeping and the display from turning off while
+// the device is running. State is per-thread; the controller and its timers
+// live on the GUI thread.
+void setScreenKeepAwake(bool on)
+{
+#ifdef Q_OS_WIN
+    if (on)
+        SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED);
+    else
+        SetThreadExecutionState(ES_CONTINUOUS);
+#else
+    Q_UNUSED(on)
+#endif
+}
 }
 
 DeviceController::DeviceController(QObject *parent)
@@ -189,11 +208,29 @@ void DeviceController::toggleRunning()
     m_lowCurrentCount = 0;
     m_runStartMs = QDateTime::currentMSecsSinceEpoch();
     m_running = true;
+    setScreenKeepAwake(true);
     emit runningChanged();
     emit chartDataChanged();
     appendLog(QStringLiteral("已启动运行，每 5 秒读取一次电压电流"));
     sendQuery(PendingRequest::Sample);
     m_sampleTimer.start();
+}
+
+void DeviceController::resetData()
+{
+    if (m_running)
+        return;
+
+    m_sampleTimes.clear();
+    m_sampleVoltages.clear();
+    m_sampleCurrents.clear();
+    m_lowCurrentCount = 0;
+    m_voltageV = 0.0;
+    m_currentA = 0.0;
+    m_powerW = 0.0;
+    emit measurementChanged();
+    emit chartDataChanged();
+    appendLog(QStringLiteral("已清除绘图与数值显示"));
 }
 
 void DeviceController::appendLog(const QString &message)
@@ -269,7 +306,7 @@ void DeviceController::onReadyRead()
             ++m_lowCurrentCount;
             if (m_lowCurrentCount >= kZeroCurrentStopCount) {
                 stopRunningInternal();
-                appendLog(QStringLiteral("连续 %1 次读取的电流均小于 10mA，已自动停止运行")
+                appendLog(QStringLiteral("连续 %1 次读取的电流均小于 5mA，已自动停止运行")
                               .arg(kZeroCurrentStopCount));
             }
         } else {
@@ -371,6 +408,7 @@ void DeviceController::stopRunningInternal()
     if (!m_running)
         return;
     m_running = false;
+    setScreenKeepAwake(false);
     emit runningChanged();
 }
 

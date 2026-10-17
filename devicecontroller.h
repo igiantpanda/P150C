@@ -59,6 +59,7 @@ public:
     Q_INVOKABLE void toggleConnection();
     Q_INVOKABLE void toggleRunning();
     Q_INVOKABLE void persistSerialConfig();
+    Q_INVOKABLE void resetData();
 
 signals:
     void connectedChanged();

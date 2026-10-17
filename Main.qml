@@ -253,6 +253,12 @@ ApplicationWindow {
                             onClicked: aboutDialog.open()
                         }
 
+                        Button {
+                            text: qsTr("重置")
+                            enabled: !device.running
+                            onClicked: device.resetData()
+                        }
+
                         Item { Layout.fillWidth: true }
 
                         Button {
