@@ -103,7 +103,7 @@ private:
     QVariantList m_sampleVoltages;
     QVariantList m_sampleCurrents;
     qint64 m_runStartMs = 0;
-    int m_zeroCurrentCount = 0;
+    int m_lowCurrentCount = 0;
 
     QString m_portName;
     int m_baudRate = 9600;

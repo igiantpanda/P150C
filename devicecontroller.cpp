@@ -9,6 +9,7 @@ constexpr int kMinFrameSize = 21;
 constexpr int kResponseTimeoutMs = 1500;
 constexpr int kSampleIntervalMs = 5000;
 constexpr int kZeroCurrentStopCount = 5;
+constexpr double kLowCurrentThresholdA = 0.010; // 10mA
 const QLatin1String kSettingsGroup("serial");
 const QLatin1String kKeyPort("portName");
 const QLatin1String kKeyBaud("baudRate");
@@ -185,7 +186,7 @@ void DeviceController::toggleRunning()
     m_sampleTimes.clear();
     m_sampleVoltages.clear();
     m_sampleCurrents.clear();
-    m_zeroCurrentCount = 0;
+    m_lowCurrentCount = 0;
     m_runStartMs = QDateTime::currentMSecsSinceEpoch();
     m_running = true;
     emit runningChanged();
@@ -264,15 +265,15 @@ void DeviceController::onReadyRead()
         m_sampleCurrents.append(current);
         emit chartDataChanged();
 
-        if (current == 0.0) {
-            ++m_zeroCurrentCount;
-            if (m_zeroCurrentCount >= kZeroCurrentStopCount) {
+        if (current < kLowCurrentThresholdA) {
+            ++m_lowCurrentCount;
+            if (m_lowCurrentCount >= kZeroCurrentStopCount) {
                 stopRunningInternal();
-                appendLog(QStringLiteral("连续 %1 次读取的电流均为 0，已自动停止运行")
+                appendLog(QStringLiteral("连续 %1 次读取的电流均小于 10mA，已自动停止运行")
                               .arg(kZeroCurrentStopCount));
             }
         } else {
-            m_zeroCurrentCount = 0;
+            m_lowCurrentCount = 0;
         }
     }
 

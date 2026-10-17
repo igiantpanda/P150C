@@ -7,10 +7,67 @@ Item {
     property var voltages: []
     property var currents: []
 
+    // Plot geometry/scale published by Canvas.onPaint for the hover layer.
+    property var plotScale: null
+    property bool hoverActive: false
+    property int hoverIndex: -1
+    property real hoverMouseX: 0
+    property real hoverMouseY: 0
+
     readonly property color voltageColor: "#facc15"
     readonly property color currentColor: "#22d3ee"
     readonly property color gridColor: "#2a2a2a"
     readonly property color axisColor: "#555555"
+
+    // Binary-search nearest sample (times are monotonically increasing).
+    function nearestIndex(t) {
+        const n = times.length
+        if (n === 0)
+            return -1
+        if (t <= Number(times[0]))
+            return 0
+        if (t >= Number(times[n - 1]))
+            return n - 1
+        let lo = 0
+        let hi = n - 1
+        while (hi - lo > 1) {
+            const mid = (lo + hi) >> 1
+            if (Number(times[mid]) <= t)
+                lo = mid
+            else
+                hi = mid
+        }
+        return Math.abs(Number(times[lo]) - t) <= Math.abs(Number(times[hi]) - t) ? lo : hi
+    }
+
+    function markerX(i) {
+        const s = plotScale
+        if (!s || i < 0)
+            return -100
+        return s.left + (Number(times[i]) - s.minT) / s.spanT * s.plotW
+    }
+
+    function markerY(v, b) {
+        const s = plotScale
+        if (!s || !b)
+            return -100
+        return s.top + (1 - (v - b.lo) / (b.hi - b.lo)) * s.plotH
+    }
+
+    function pad2(v) { return v < 10 ? "0" + v : String(v) }
+
+    function formatHoverTime(t) {
+        const s = plotScale
+        const sec = Math.round(t)
+        if (!s || s.timeUnit === "s")
+            return sec + "s"
+        const hh = Math.floor(sec / 3600)
+        const mm = Math.floor((sec % 3600) / 60)
+        const ss = sec % 60
+        if (s.timeUnit === "h")
+            return hh + ":" + pad2(mm) + ":" + pad2(ss)
+        return pad2(mm) + ":" + pad2(ss)
+    }
 
     Canvas {
         id: canvas
@@ -233,12 +290,142 @@ Item {
             ctx.textAlign = "left"
             ctx.textBaseline = "bottom"
             ctx.fillText("Sampling 5.000s", left + 8, h - 6)
+
+            root.plotScale = {
+                left: left,
+                top: top,
+                bottom: bottom,
+                plotW: plotW,
+                plotH: plotH,
+                minT: minT,
+                spanT: spanT,
+                timeUnit: timeUnit,
+                bV: bV,
+                bI: bI
+            }
         }
     }
 
-    onTimesChanged: canvas.requestPaint()
+    onTimesChanged: {
+        if (hoverIndex >= times.length) {
+            hoverIndex = -1
+            hoverActive = false
+        }
+        canvas.requestPaint()
+    }
     onVoltagesChanged: canvas.requestPaint()
     onCurrentsChanged: canvas.requestPaint()
     onWidthChanged: canvas.requestPaint()
     onHeightChanged: canvas.requestPaint()
+
+    // Hover overlay: crosshair at the nearest sample and a value tooltip.
+    Item {
+        anchors.fill: parent
+        visible: root.hoverActive && root.hoverIndex >= 0 && root.plotScale !== null
+
+        Rectangle {
+            x: root.markerX(root.hoverIndex)
+            y: root.plotScale ? root.plotScale.top : 0
+            width: 1
+            height: root.plotScale ? root.plotScale.plotH : 0
+            color: "#888888"
+        }
+
+        Rectangle {
+            x: root.markerX(root.hoverIndex) - 4
+            y: root.markerY(Number(root.voltages[root.hoverIndex]),
+                            root.plotScale ? root.plotScale.bV : null) - 4
+            width: 8
+            height: 8
+            radius: 4
+            color: root.voltageColor
+            border.color: "white"
+            border.width: 1
+        }
+
+        Rectangle {
+            x: root.markerX(root.hoverIndex) - 4
+            y: root.markerY(Number(root.currents[root.hoverIndex]),
+                            root.plotScale ? root.plotScale.bI : null) - 4
+            width: 8
+            height: 8
+            radius: 4
+            color: root.currentColor
+            border.color: "white"
+            border.width: 1
+        }
+
+        Rectangle {
+            id: tip
+            width: 158
+            height: col.implicitHeight + 14
+            radius: 4
+            color: "#e6141414"
+            border.color: "#777777"
+            border.width: 1
+
+            x: {
+                if (!root.plotScale)
+                    return 0
+                var px = root.hoverMouseX + 12
+                if (px + width > root.width)
+                    px = root.hoverMouseX - 12 - width
+                return Math.max(root.plotScale.left,
+                                Math.min(px, root.width - width - 2))
+            }
+            y: {
+                var py = root.hoverMouseY + 12
+                return Math.max(2, Math.min(py, root.height - height - 2))
+            }
+
+            Column {
+                id: col
+                x: 8
+                y: 7
+                spacing: 3
+
+                Text {
+                    text: qsTr("时间：") + root.formatHoverTime(Number(root.times[root.hoverIndex]))
+                    color: "#dddddd"
+                    font.pixelSize: 12
+                }
+                Text {
+                    text: qsTr("电压：") + Number(root.voltages[root.hoverIndex]).toFixed(3) + " V"
+                    color: root.voltageColor
+                    font.pixelSize: 12
+                }
+                Text {
+                    text: qsTr("电流：") + Number(root.currents[root.hoverIndex]).toFixed(3) + " A"
+                    color: root.currentColor
+                    font.pixelSize: 12
+                }
+            }
+        }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        acceptedButtons: Qt.NoButton
+
+        onPositionChanged: (mouse) => {
+            const s = root.plotScale
+            root.hoverMouseX = mouse.x
+            root.hoverMouseY = mouse.y
+            if (!s || root.times.length === 0) {
+                root.hoverActive = false
+                return
+            }
+            if (mouse.x < s.left || mouse.x > s.left + s.plotW
+                    || mouse.y < s.top || mouse.y > s.top + s.plotH) {
+                root.hoverActive = false
+                return
+            }
+            const t = s.minT + (mouse.x - s.left) / s.plotW * s.spanT
+            root.hoverIndex = root.nearestIndex(t)
+            root.hoverActive = root.hoverIndex >= 0
+        }
+
+        onExited: root.hoverActive = false
+    }
 }
